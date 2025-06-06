@@ -1,28 +1,23 @@
 #!/bin/bash
 
-# Log directory
 LOG_DIR="/var/www/html/storage/logs"
 
 echo "Starting script..."
 
-echo "Clearing log file..."
-if [ -n "$LOG_DIR" ]; then
-    rm -f "$LOG_DIR/startup-script.log"
-fi
-
 if [ ! -d "$LOG_DIR" ]; then
-    echo "Warning: Log directory does not exist (maybe first install ?). Logging disabled until restart."
-    LOG_DIR=""
+    echo "Creating log directory..."
+    mkdir -p "$LOG_DIR"
 fi
 
+# Log helper
 log_message() {
-    if [ -n "$LOG_DIR" ]; then
+    echo "$1"
+    if [ -d "$LOG_DIR" ]; then
         echo "$1" >> "$LOG_DIR/startup-script.log"
     fi
-    echo "$1"
 }
 
-# Copy project files if public folder is missing
+# Copiar archivos si falta la carpeta pública
 if [ ! -d "/var/www/html/public" ]; then
     log_message "Warning: project folder is empty. Copying default files..."
     cp -nr /var/default/. /var/www/html
@@ -30,16 +25,16 @@ if [ ! -d "/var/www/html/public" ]; then
     chmod -R 755 /var/www/html/
 fi
 
-# Copy .env if not exists
+# Copiar .env si falta
 cp -n /var/default/.env.example /var/www/html/.env
 
-# Copy Nginx config if missing
+# Copiar configuración nginx si falta
 if [ ! -f "/etc/nginx/conf.d/default.conf" ]; then
     log_message "Warning: Nginx configuration not found. Copying default configuration..."
     cp -n /var/default/docker/standalone/nginx/default.conf /etc/nginx/conf.d/default.conf
 fi
 
-# Install composer dependencies if vendor missing
+# Instalar dependencias composer si falta vendor
 if [ -f "/var/www/html/composer.json" ] && [ ! -d "/var/www/html/vendor" ]; then
     log_message "Composer dependencies not found. Running composer install..."
     cd /var/www/html || exit
@@ -49,40 +44,24 @@ fi
 
 cd /var/www/html || exit
 
-# Generate APP_KEY if missing
+# Generar APP_KEY si falta
 if ! grep -q "^APP_KEY=base64:" .env; then
     log_message "APP_KEY not found. Generating new Laravel APP_KEY..."
     php artisan key:generate
 fi
 
-# Fix permissions en storage y bootstrap/cache para evitar errores 500
+# Arreglar permisos y dueños de storage y bootstrap/cache — la dupla ganadora es usar el usuario que corre PHP-FPM, que en tu caso es **laravel** (por lo que veo en Dockerfile) y darle permisos 775
 log_message "🔧 Ajustando permisos en storage y bootstrap/cache..."
+
 chown -R laravel:laravel storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
-chown -R laravel:laravel /var/www/html/storage /var/www/html/bootstrap/cache
-chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
-chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
-chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
-chmod -R 775 storage bootstrap/cache
-chown -R www-data:www-data storage bootstrap/cache
-chmod -R 777 storage bootstrap/cache
-chmod 777 -R /var/www/html/storage
-chmod 777 -R /var/www/html/bootstrap/cache
-mkdir -p storage/logs
-touch storage/logs/laravel.log
-chmod -R 775 storage bootstrap/cache
-chown -R www-data:www-data storage bootstrap/cache
-# Asegúrate de que los logs existan
-mkdir -p storage/logs
-touch storage/logs/laravel.log
-# Dale permisos y dueño correctos
-chmod -R ug+rw storage bootstrap/cache
-chmod -R 775 storage bootstrap/cache
-chmod 666 storage/logs/laravel.log
-# Esto depende del usuario de PHP-FPM, en muchos servidores es www-data
-chown -R www-data:www-data storage bootstrap/cache
 
-# Limpiar caches para evitar config corrupta
+# Crear el archivo laravel.log si no existe
+touch storage/logs/laravel.log
+chmod 664 storage/logs/laravel.log
+chown laravel:laravel storage/logs/laravel.log
+
+# Limpiar caches de Laravel para que no haya config corrupta
 log_message "Limpiando caches de Laravel..."
 php artisan config:clear
 php artisan cache:clear
@@ -90,20 +69,20 @@ php artisan route:clear
 php artisan view:clear
 php artisan config:cache
 
-# Ejecutar migraciones con seed forzado (si hay)
+# Migrar base de datos con seed
 log_message "Ejecutando migraciones de base de datos..."
 runuser -u laravel -- php artisan migrate --seed --force
 
 cd - || exit
 
-# Start queue worker
+# Iniciar queue worker en background
 log_message "Starting the queue worker service..."
 runuser -u laravel -- php /var/www/html/artisan queue:work --sleep=3 --tries=3 &
 
-# Start Nginx
+# Iniciar Nginx
 log_message "Starting Nginx..."
 service nginx start
 
-# Start PHP-FPM
+# Iniciar PHP-FPM en primer plano
 log_message "Starting PHP-FPM..."
 php-fpm -F

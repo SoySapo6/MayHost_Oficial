@@ -25,17 +25,16 @@ log_message() {
     echo "$1"
 }
 
-# Check if public folder is exists. If not, copy project.
+# Check if public folder exists. If not, copy project.
 if [ ! -d "/var/www/html/public" ]; then
     log_message "Warning: project folder is empty. Copying default files..."
-    # Copy everything from /var/default to /var/www/html
-    cp -nr /var/default/. /var/www/html   # Use -n to avoid overwriting existing files
+    cp -nr /var/default/. /var/www/html
     chown -R laravel:laravel /var/www/html/
     chmod -R 755 /var/www/html/
 fi
 
-# Copy .env file for it to be available when starting the Docker container (to be able to bind-mount it to the host, instead of the entire project folder).
-cp -n /var/default/.env.example /var/www/html/.env   # Use -n to avoid overwriting existing files
+# Copy .env file if not exists
+cp -n /var/default/.env.example /var/www/html/.env
 
 # Check and copy default Nginx configuration if not exists
 if [ ! -f "/etc/nginx/conf.d/default.conf" ]; then
@@ -43,7 +42,7 @@ if [ ! -f "/etc/nginx/conf.d/default.conf" ]; then
     cp -n /var/default/docker/standalone/nginx/default.conf /etc/nginx/conf.d/default.conf
 fi
 
-# Check and execute composer install if composer.json is present and there's no vendor directory
+# Install dependencies if needed
 if [ -f "/var/www/html/composer.json" ] && [ ! -d "/var/www/html/vendor" ]; then
     log_message "Warning: Composer dependencies not found. Running composer install..."
     cd /var/www/html || exit
@@ -51,10 +50,19 @@ if [ -f "/var/www/html/composer.json" ] && [ ! -d "/var/www/html/vendor" ]; then
     cd - || exit
 fi
 
+# ⚙️ Generate APP_KEY if not exists
+cd /var/www/html || exit
+if ! grep -q "APP_KEY=base64" .env; then
+    log_message "APP_KEY not found. Generating new Laravel APP_KEY..."
+    php artisan key:generate
+fi
+cd - || exit
+
 # Start the queue worker service
 log_message "Starting the queue worker service..."
 runuser -u laravel -- php /var/www/html/artisan queue:work --sleep=3 --tries=3 &
 
+# Run database migrations
 log_message "Migrate Database to current state..."
 runuser -u laravel -- php artisan migrate --seed --force
 

@@ -1,75 +1,82 @@
 #!/bin/bash
 
-# Log directory
 LOG_DIR="/var/www/html/storage/logs"
+PROJECT_DIR="/var/www/html"
+DEFAULT_DIR="/var/default"
 
-echo "Starting script..."
-
-echo "Clearing log file..."
-# clean all logs in log directory
-if [ -n "$LOG_DIR" ]; then
-    rm -f "$LOG_DIR/startup-script.log"
-fi
-
-# Check if log directory exists
-if [ ! -d "$LOG_DIR" ]; then
-    echo "Warning: Log directory does not exist (maybe first install ?). Logging disabled until restart."
-    LOG_DIR=""
-fi
+echo "✨ Starting Laravel startup script..."
 
 # Function to log messages
 log_message() {
-    if [ -n "$LOG_DIR" ]; then
-        echo "$1" >> "$LOG_DIR/startup-script.log"
-    fi
     echo "$1"
+    [ -n "$LOG_DIR" ] && echo "$1" >> "$LOG_DIR/startup-script.log"
 }
 
-# Check if public folder exists. If not, copy project.
-if [ ! -d "/var/www/html/public" ]; then
-    log_message "Warning: project folder is empty. Copying default files..."
-    cp -nr /var/default/. /var/www/html
-    chown -R laravel:laravel /var/www/html/
-    chmod -R 755 /var/www/html/
+# Limpiar logs anteriores
+[ -n "$LOG_DIR" ] && rm -f "$LOG_DIR/startup-script.log"
+[ ! -d "$LOG_DIR" ] && LOG_DIR=""
+
+# Copiar archivos si public no existe
+if [ ! -d "$PROJECT_DIR/public" ]; then
+    log_message "⚠️ Proyecto vacío. Copiando archivos iniciales..."
+    cp -nr "$DEFAULT_DIR/." "$PROJECT_DIR/"
+    chown -R laravel:laravel "$PROJECT_DIR/"
+    chmod -R 755 "$PROJECT_DIR/"
 fi
 
-# Copy .env file if not exists
-cp -n /var/default/.env.example /var/www/html/.env
+# Copiar .env si no existe
+[ ! -f "$PROJECT_DIR/.env" ] && cp -n "$DEFAULT_DIR/.env.example" "$PROJECT_DIR/.env"
 
-# Check and copy default Nginx configuration if not exists
+# Configurar NGINX si falta
 if [ ! -f "/etc/nginx/conf.d/default.conf" ]; then
-    log_message "Warning: Nginx configuration not found. Copying default configuration..."
-    cp -n /var/default/docker/standalone/nginx/default.conf /etc/nginx/conf.d/default.conf
+    log_message "🛠️ Copiando configuración de NGINX..."
+    cp -n "$DEFAULT_DIR/docker/standalone/nginx/default.conf" /etc/nginx/conf.d/default.conf
 fi
 
-# Install dependencies if needed
-if [ -f "/var/www/html/composer.json" ] && [ ! -d "/var/www/html/vendor" ]; then
-    log_message "Warning: Composer dependencies not found. Running composer install..."
-    cd /var/www/html || exit
+cd "$PROJECT_DIR" || exit
+
+# Instalar dependencias si faltan
+if [ ! -d "vendor" ]; then
+    log_message "📦 Instalando dependencias con Composer..."
     composer install --no-dev --optimize-autoloader
-    cd - || exit
 fi
 
-# ⚙️ Generate APP_KEY if not exists
-cd /var/www/html || exit
-if ! grep -q "APP_KEY=base64" .env; then
-    log_message "APP_KEY not found. Generating new Laravel APP_KEY..."
+# Generar APP_KEY si no está
+if ! grep -q "APP_KEY=base64" .env || grep -q "APP_KEY=$" .env; then
+    log_message "🔐 Generando nueva APP_KEY..."
     php artisan key:generate
 fi
-cd - || exit
 
-# Start the queue worker service
-log_message "Starting the queue worker service..."
-runuser -u laravel -- php /var/www/html/artisan queue:work --sleep=3 --tries=3 &
+# Limpiar y cachear configuración de Laravel
+log_message "🧹 Limpiando y cacheando Laravel..."
+php artisan config:clear
+php artisan cache:clear
+php artisan route:clear
+php artisan view:clear
+php artisan config:cache
 
-# Run database migrations
-log_message "Migrate Database to current state..."
-runuser -u laravel -- php artisan migrate --seed --force
+# Esperar a que la DB esté lista
+log_message "⏳ Esperando que la base de datos esté disponible..."
+for i in {1..5}; do
+    if php artisan migrate:status > /dev/null 2>&1; then
+        log_message "✅ Base de datos lista!"
+        break
+    fi
+    log_message "🔁 Esperando DB ($i/5)..."
+    sleep 5
+done
 
-# Start Nginx
-log_message "Starting Nginx..."
+# Ejecutar migraciones
+log_message "🧬 Migrando la base de datos..."
+php artisan migrate --seed --force
+
+# Iniciar worker en background
+log_message "⚙️ Iniciando worker de colas..."
+runuser -u laravel -- php artisan queue:work --sleep=3 --tries=3 &
+
+# Iniciar servicios web
+log_message "🚀 Iniciando Nginx..."
 service nginx start
 
-# Start PHP-FPM
-log_message "Starting PHP-FPM..."
+log_message "🔥 Iniciando PHP-FPM..."
 php-fpm -F

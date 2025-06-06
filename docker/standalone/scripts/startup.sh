@@ -66,6 +66,12 @@ chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 chmod -R 775 storage bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
 chmod -R 777 storage bootstrap/cache
+chmod 777 -R /var/www/html/storage
+chmod 777 -R /var/www/html/bootstrap/cache
+mkdir -p storage/logs
+touch storage/logs/laravel.log
+chmod -R 775 storage bootstrap/cache
+chown -R www-data:www-data storage bootstrap/cache
 
 # Limpiar caches para evitar config corrupta
 log_message "Limpiando caches de Laravel..."

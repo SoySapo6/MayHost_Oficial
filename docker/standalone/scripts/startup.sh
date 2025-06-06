@@ -72,6 +72,15 @@ mkdir -p storage/logs
 touch storage/logs/laravel.log
 chmod -R 775 storage bootstrap/cache
 chown -R www-data:www-data storage bootstrap/cache
+# Asegúrate de que los logs existan
+mkdir -p storage/logs
+touch storage/logs/laravel.log
+# Dale permisos y dueño correctos
+chmod -R ug+rw storage bootstrap/cache
+chmod -R 775 storage bootstrap/cache
+chmod 666 storage/logs/laravel.log
+# Esto depende del usuario de PHP-FPM, en muchos servidores es www-data
+chown -R www-data:www-data storage bootstrap/cache
 
 # Limpiar caches para evitar config corrupta
 log_message "Limpiando caches de Laravel..."

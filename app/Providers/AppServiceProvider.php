@@ -59,20 +59,23 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        // Get the Git branch (safe version)
-        $branchname = 'unknown';
-
+        // 💣 Git branch seguro a prueba de todo
         try {
-            $headPath = base_path('.git/HEAD');
-            if (file_exists($headPath)) {
-                $headContent = trim(file_get_contents($headPath));
-                if (str_starts_with($headContent, 'ref:')) {
-                    $parts = explode('/', $headContent);
-                    $branchname = end($parts);
+            $branchname = 'unknown';
+            $gitHead = base_path('.git/HEAD');
+
+            if (file_exists($gitHead)) {
+                $contents = file($gitHead);
+                if (isset($contents[0])) {
+                    $exploded = explode('/', trim($contents[0]));
+                    if (count($exploded) >= 3) {
+                        $branchname = $exploded[2];
+                    }
                 }
             }
-        } catch (\Throwable $e) {
+        } catch (Exception $e) {
             Log::notice("Failed to get Git branch: " . $e->getMessage());
+            $branchname = 'unknown';
         }
 
         config(['BRANCHNAME' => $branchname]);
@@ -82,11 +85,11 @@ class AppServiceProvider extends ServiceProvider
 
         try {
             if (Schema::hasColumn('useful_links', 'position')) {
-                $useful_links = UsefulLink::where("position", "like", "%topbar%")->get()->sortby("id");
+                $useful_links = UsefulLink::where("position", "like", "%topbar%")->get()->sortBy("id");
                 view()->share('useful_links', $useful_links);
             }
         } catch (Exception $e) {
-            Log::error("Couldnt find useful_links. Probably the installation is not completet. " . $e);
+            Log::error("Couldn't find useful_links. Probably the installation is not complete. " . $e);
         }
     }
 }

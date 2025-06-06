@@ -42,13 +42,10 @@ class AppServiceProvider extends ServiceProvider
             $ok = true;
             $result = [];
 
-            // iterate through all formats
             foreach ($parameters as $parameter) {
-                //validate with laravels standard date format validation
                 $result[] = $validator->validateDateFormat($attribute, $value, [$parameter]);
             }
 
-            //if none of result array is true. it sets ok to false
             if (!in_array(true, $result)) {
                 $ok = false;
                 $validator->setCustomMessages(['multiple_date_format' => 'The format must be one of ' . implode(',', $parameters)]);
@@ -62,19 +59,22 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        //get the Github Branch the panel is running on
+        // Get the Git branch (safe version)
+        $branchname = 'unknown';
+
         try {
-            $stringfromfile = file(base_path() . '/.git/HEAD');
-
-            $firstLine = $stringfromfile[0]; //get the string from the array
-
-            $explodedstring = explode('/', $firstLine, 3); //seperate out by the "/" in the string
-
-            $branchname = $explodedstring[2]; //get the one that is always the branch name
-        } catch (Exception $e) {
-            $branchname = 'unknown';
-            Log::notice($e);
+            $headPath = base_path('.git/HEAD');
+            if (file_exists($headPath)) {
+                $headContent = trim(file_get_contents($headPath));
+                if (str_starts_with($headContent, 'ref:')) {
+                    $parts = explode('/', $headContent);
+                    $branchname = end($parts);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::notice("Failed to get Git branch: " . $e->getMessage());
         }
+
         config(['BRANCHNAME' => $branchname]);
 
         // Do not run this code if no APP_KEY is set

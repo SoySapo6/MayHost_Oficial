@@ -50,7 +50,7 @@ if ! grep -q "^APP_KEY=base64:" .env; then
     php artisan key:generate
 fi
 
-# Arreglar permisos y dueños de storage y bootstrap/cache — la dupla ganadora es usar el usuario que corre PHP-FPM, que en tu caso es **laravel** (por lo que veo en Dockerfile) y darle permisos 775
+# Arreglar permisos y dueños de storage y bootstrap/cache
 log_message "🔧 Ajustando permisos en storage y bootstrap/cache..."
 
 chown -R laravel:laravel storage bootstrap/cache
@@ -61,7 +61,7 @@ touch storage/logs/laravel.log
 chmod 664 storage/logs/laravel.log
 chown laravel:laravel storage/logs/laravel.log
 
-# Limpiar caches de Laravel para que no haya config corrupta
+# Limpiar caches de Laravel
 log_message "Limpiando caches de Laravel..."
 php artisan config:clear
 php artisan cache:clear
